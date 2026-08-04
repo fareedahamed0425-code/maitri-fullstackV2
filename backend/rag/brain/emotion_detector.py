@@ -15,9 +15,24 @@ HF_API_DISABLED = False
 
 _emotion_pipeline = None
 
+
+def _should_use_heavy_model() -> bool:
+    """Avoid loading large transformer models in production-like environments."""
+    if os.getenv("RENDER") or os.getenv("ENVIRONMENT") == "production":
+        return False
+
+    disabled = os.getenv("EMOTION_MODEL_ENABLED", "true").strip().lower()
+    return disabled not in {"0", "false", "no", "off"}
+
+
 def get_emotion_pipeline():
     global _emotion_pipeline
     if _emotion_pipeline is None:
+        if not _should_use_heavy_model():
+            print("[HF Emotion] Heavy model disabled in this environment; using heuristic fallback.")
+            _emotion_pipeline = "DISABLED"
+            return _emotion_pipeline
+
         try:
             from transformers import pipeline
             print(f"[HF Emotion] Loading local transformers pipeline for {HF_MODEL}...")
@@ -29,8 +44,13 @@ def get_emotion_pipeline():
             _emotion_pipeline = "FAILED"
     return _emotion_pipeline
 
+
 def preload_models():
-    """Eagerly loads the emotion detection model into memory."""
+    """Eagerly loads the emotion detection model into memory when enabled."""
+    if not _should_use_heavy_model():
+        print("[HF Emotion] Skipping model preload in this environment.")
+        return
+
     print("[HF Emotion] Preloading models...")
     get_emotion_pipeline()
     print("[HF Emotion] Models preloaded successfully.")

@@ -24,6 +24,7 @@ from modules.profile.api import router as profile_router
 from modules.admin.api import router as admin_router
 from rag.brain.emotion_detector import preload_models
 from providers.sarvam.voice_client import close_http_client
+from rag.knowledge.retriever import ensure_knowledge_base
 
 import asyncio
 
@@ -67,8 +68,16 @@ async def lifespan(app: FastAPI):
                     CommandCenter.set_health("Database", "Failed")
 
         progress.update(task3, advance=50)
-        # Preload models
-        preload_models()
+        try:
+            ensure_knowledge_base()
+        except Exception as exc:
+            CommandCenter.log_error(f"RAG bootstrap skipped: {exc}")
+
+        # Preload heavyweight models only when explicitly enabled.
+        try:
+            preload_models()
+        except Exception as exc:
+            CommandCenter.log_error(f"Model preload skipped: {exc}")
         # Assume providers are healthy for now
         CommandCenter.set_health("Firebase", "Healthy")
         CommandCenter.set_health("Sarvam", "Healthy")
@@ -78,11 +87,13 @@ async def lifespan(app: FastAPI):
         progress.update(task1, completed=100)
         
     CommandCenter.set_health("API Server", "Healthy")
-    CommandCenter.start_dashboard()
+    if not os.getenv("RENDER") and os.getenv("ENVIRONMENT") != "production":
+        CommandCenter.start_dashboard()
     
     yield
     
-    CommandCenter.stop_dashboard()
+    if not os.getenv("RENDER") and os.getenv("ENVIRONMENT") != "production":
+        CommandCenter.stop_dashboard()
     print("[SHUTDOWN] Signal received. Setting shutdown event...")
     app.state.shutdown_event.set()
     await close_http_client()
@@ -197,4 +208,4 @@ def architecture_view():
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
-    return "<html><body><h2>MindBridge Architecture Flow</h2><p>Architecture diagram file not found.</p></body></html>"
+    return "<html><body><h2>MindBridge Architecture Flow</h2><p>Architecture diagram file not found.</p></body></html>"

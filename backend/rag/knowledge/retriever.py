@@ -11,11 +11,35 @@ COLLECTION_NAME = "therapy_knowledge"
 
 _client = None
 _collection = None
+_build_attempted = False
+
+
+def ensure_knowledge_base() -> bool:
+    """Build a local Chroma knowledge base if it is missing or empty."""
+    global _build_attempted
+    if is_knowledge_base_ready():
+        return True
+    if _build_attempted:
+        return False
+
+    _build_attempted = True
+    try:
+        from rag.knowledge.builder import build_knowledge_base
+        print("[RAG] Knowledge base missing; building now...")
+        build_knowledge_base()
+        return is_knowledge_base_ready()
+    except Exception as exc:
+        print(f"[RAG] Knowledge base build failed: {exc}")
+        return False
 
 
 def get_collection():
     """Lazy-load ChromaDB collection (singleton)."""
     global _client, _collection
+    if not is_knowledge_base_ready():
+        if not ensure_knowledge_base():
+            raise RuntimeError("Knowledge base is unavailable")
+
     if _collection is None:
         import chromadb
         from chromadb.config import Settings

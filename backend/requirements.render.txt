@@ -1,0 +1,3 @@
+# Production image uses the full backend requirement set so the voice pipeline,
+# RAG retriever, and AI clients all have the modules they need at runtime.
+-r requirements.txt

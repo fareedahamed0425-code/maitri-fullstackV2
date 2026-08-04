@@ -7,17 +7,42 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from core.database.models import get_db, Session as DBSession, Message, MessageEmotion, RiskLog, User, ExerciseLog, UserPersonaProfile, UserOnboarding
-from providers.sarvam.sarvam_client import chat_with_maitri
 from rag.brain.emotion_detector import detect_emotion, detect_emotion_heuristic
-from rag.brain.analyst import should_skip_assessor, assess_turn
-from rag.brain.pattern_analyzer import analyze_patterns
-from providers.sarvam.voice_client import get_language_prompt
 from security.crisis_handler import check_for_crisis
 from modules.profile.service import get_persona_summary, update_persona
-from rag.brain.state_tracker import tracker
 from security.authentication.api import get_current_user
 from modules.dashboard.api import broadcast_event
 from core.logger.terminal import CommandCenter
+
+
+def _chat_with_maitri(*args, **kwargs):
+    from providers.sarvam.sarvam_client import chat_with_maitri
+    return chat_with_maitri(*args, **kwargs)
+
+
+def _get_language_prompt(language: str):
+    from providers.sarvam.voice_client import get_language_prompt
+    return get_language_prompt(language)
+
+
+def _should_skip_assessor(message: str, case_file):
+    from rag.brain.analyst import should_skip_assessor
+    return should_skip_assessor(message, case_file)
+
+
+def _assess_turn(*args, **kwargs):
+    from rag.brain.analyst import assess_turn
+    return assess_turn(*args, **kwargs)
+
+
+def _analyze_patterns(*args, **kwargs):
+    from rag.brain.pattern_analyzer import analyze_patterns
+    return analyze_patterns(*args, **kwargs)
+
+
+def _get_tracker():
+    from rag.brain.state_tracker import tracker
+    return tracker
 
 try:
     from rag.knowledge.retriever import retrieve_context, is_knowledge_base_ready
@@ -75,7 +100,7 @@ def start_session(
     is_first = session_count == 1
 
     # Initialize state tracker for this session
-    tracker.init_session(session.id, is_first_session=is_first)
+    _get_tracker().init_session(session.id, is_first_session=is_first)
 
     initial_message = "Session started."
     if is_first:
@@ -110,7 +135,7 @@ Instructions:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "Generate my personalized onboarding greeting."}
                 ]
-                initial_message = chat_with_maitri(
+                initial_message = _chat_with_maitri(
                     messages=messages,
                     language=onboarding.language or current_user.preferred_language or "en-IN",
                     max_tokens=250
@@ -181,7 +206,7 @@ async def send_message(
 
     # ── Pattern Analysis ──────────────────────────────────────────────────────
     recent_user_msgs = [m.content for m in past if m.role == "user"][-5:]
-    pattern_signal = analyze_patterns(recent_user_msgs, req.message)
+    pattern_signal = _analyze_patterns(recent_user_msgs, req.message)
     pattern_block  = pattern_signal.as_prompt_block()
 
     # ── Persona Profile ───────────────────────────────────────────────────────
@@ -191,7 +216,7 @@ async def send_message(
 
     # ── RAG ──────────────────────────────────────────────────────────────────
     rag_context = retrieve_context(req.message) if RAG_AVAILABLE else ""
-    lang_prompt = get_language_prompt(req.language)
+    lang_prompt = _get_language_prompt(req.language)
 
     # ── Emotion Detection ─────────────────────────────────────────────────────
     try:
@@ -203,6 +228,7 @@ async def send_message(
     CommandCenter.log_ai("EMOTION_DETECTED", f"AI detected: {emotion.label} (Confidence: {emotion.score:.2f})")
 
     # Update state tracker
+    tracker = _get_tracker()
     tracker.update_emotion(session.id, emotion.label)
     tracker.record_message_length(session.id, len(req.message))
     if crisis.is_crisis:
@@ -216,7 +242,7 @@ async def send_message(
     # ── MAITRI AGENT LOOP v2: Assessor Phase ──────────────────────────────────
     case_file = tracker.get_case_file(session.id)
 
-    if should_skip_assessor(req.message, case_file):
+    if _should_skip_assessor(req.message, case_file):
         await broadcast_event("LLM_START", "Assessor Skipped (Trivial Input)")
         CommandCenter.log_ai("LLM_START", "Assessor skipped via fast-path filter")
         msg_clean = req.message.strip().lower()
@@ -297,16 +323,21 @@ async def send_message(
     CommandCenter.log_ai("LLM_START", "Maitri LLM generating final empathic response")
     current_exercise_state = tracker.get_state(session.id).exercise_state
 
-    ai_response = await asyncio.to_thread(
-        chat_with_maitri,
-        messages       = history,
-        language       = req.language,
-        rag_context    = rag_context,
-        case_file      = case_file,
-        language_prompt= lang_prompt,
-        is_crisis      = crisis.is_crisis,
-        exercise_phase = current_exercise_state,
-    )
+    try:
+        ai_response = await asyncio.to_thread(
+            chat_with_maitri,
+            messages       = history,
+            language       = req.language,
+            rag_context    = rag_context,
+            case_file      = case_file,
+            language_prompt= lang_prompt,
+            is_crisis      = crisis.is_crisis,
+            exercise_phase = current_exercise_state,
+        )
+    except Exception as e:
+        print(f"[CONSULTATION] LLM call failed: {e}")
+        from providers.sarvam.sarvam_client import build_fallback_response
+        ai_response = build_fallback_response(req.message, req.language)
     
     import re
     scratchpad_match = re.search(r'<scratchpad>(.*?)</scratchpad>', ai_response, re.DOTALL | re.IGNORECASE)

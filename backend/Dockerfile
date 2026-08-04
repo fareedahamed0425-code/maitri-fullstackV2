@@ -1,37 +1,34 @@
 FROM python:3.12-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8000 \
+    RENDER=1 \
+    ENVIRONMENT=production
+
 WORKDIR /app
 
-# Install system-level dependencies needed by native packages (libsndfile1 for soundfile, gcc/g++ for C++ builds)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libffi-dev \
     libssl-dev \
     libsndfile1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file first for Docker layer caching
-COPY requirements.txt .
+COPY requirements.txt ./requirements.txt
+COPY requirements.render.txt ./requirements.render.txt
 
-RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.render.txt
 
-# Install CPU-only torch to minimize Docker image size (~150MB vs ~2GB CUDA image)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-
-# Install remaining Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
 COPY . .
 
-# Create a non-root user and grant ownership
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port
 EXPOSE 8000
 
-# Uvicorn production server
-CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["python", "run_prod.py"]
 

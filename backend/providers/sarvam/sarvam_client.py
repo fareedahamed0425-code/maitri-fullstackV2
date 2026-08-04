@@ -107,7 +107,31 @@ Return ONLY valid JSON. No markdown wrappers.
 
 
 def get_client() -> OpenAI:
+    if not SARVAM_API_KEY:
+        raise RuntimeError("SARVAM_API_KEY is not configured")
     return OpenAI(api_key=SARVAM_API_KEY, base_url=SARVAM_BASE_URL, timeout=25.0)
+
+
+def build_fallback_response(user_message: str, language: str = "en-IN") -> str:
+    """Return a safe, empathetic fallback when the upstream provider is unavailable."""
+    message = (user_message or "").strip()
+    if not message:
+        return "I’m here with you. Tell me what’s on your mind."
+
+    if any(word in message.lower() for word in ["panic", "overwhelmed", "can't breathe", "can’t breathe", "suicide", "hurt myself", "end my life"]):
+        return (
+            "I’m here with you, and I want to help you stay safe right now. "
+            "If this feels urgent, contact emergency services or a trusted person immediately. "
+            "If you want, I can stay with you and help you take the next calm step."
+        )
+
+    if language.startswith("hi"):
+        return "मैं आपके साथ हूँ। अपने मन की बात धीरे-धीरे मेरे साथ साझा करें, मैं आपके साथ हूँ।"
+    if language.startswith("ta"):
+        return "நான் உங்களுடன் இருக்கிறேன். உங்கள் எண்ணங்களை மெதுவாக என்னுடன் பகிருங்கள்."
+    if language.startswith("te"):
+        return "నేను మీతో ఉన్నాను. మీ మనసు లోని విషయాలను నెమ్మదిగా చెప్పండి."
+    return "I’m here with you. I can help you sort through what’s going on, one step at a time."
 
 
 LANGUAGE_NAMES = {
@@ -220,8 +244,12 @@ def chat_with_maitri(
         api_messages.append({"role": msg["role"], "content": msg["content"]})
     api_messages.append({"role": "user", "content": active_prompt})
 
-    client = get_client()
+    if not SARVAM_API_KEY:
+        print("[Maitri] SARVAM_API_KEY missing; returning offline fallback response.")
+        return build_fallback_response(active_prompt, language)
+
     try:
+        client = get_client()
         response = client.chat.completions.create(
             model=MODEL,
             messages=api_messages,
@@ -234,7 +262,7 @@ def chat_with_maitri(
             if chunk.choices and chunk.choices[0].delta.content:
                 full_text.append(chunk.choices[0].delta.content)
         result = "".join(full_text).strip()
-        return result if result else "I am right here with you. How are you holding up?"
+        return result if result else build_fallback_response(active_prompt, language)
     except Exception as e:
         print(f"Maitri LLM Error: {e}")
-        return "I am here with you. Take your time."
+        return build_fallback_response(active_prompt, language)
