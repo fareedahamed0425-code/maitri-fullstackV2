@@ -24,6 +24,7 @@ from modules.profile.api import router as profile_router
 from modules.admin.api import router as admin_router
 from rag.brain.emotion_detector import preload_models
 from providers.sarvam.voice_client import close_http_client
+from rag.knowledge.retriever import ensure_knowledge_base
 
 import asyncio
 
@@ -67,6 +68,11 @@ async def lifespan(app: FastAPI):
                     CommandCenter.set_health("Database", "Failed")
 
         progress.update(task3, advance=50)
+        try:
+            ensure_knowledge_base()
+        except Exception as exc:
+            CommandCenter.log_error(f"RAG bootstrap skipped: {exc}")
+
         # Preload heavyweight models only when explicitly enabled.
         try:
             preload_models()

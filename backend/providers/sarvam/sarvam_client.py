@@ -107,6 +107,8 @@ Return ONLY valid JSON. No markdown wrappers.
 
 
 def get_client() -> OpenAI:
+    if not SARVAM_API_KEY:
+        raise RuntimeError("SARVAM_API_KEY is not configured")
     return OpenAI(api_key=SARVAM_API_KEY, base_url=SARVAM_BASE_URL, timeout=25.0)
 
 
@@ -242,8 +244,12 @@ def chat_with_maitri(
         api_messages.append({"role": msg["role"], "content": msg["content"]})
     api_messages.append({"role": "user", "content": active_prompt})
 
-    client = get_client()
+    if not SARVAM_API_KEY:
+        print("[Maitri] SARVAM_API_KEY missing; returning offline fallback response.")
+        return build_fallback_response(active_prompt, language)
+
     try:
+        client = get_client()
         response = client.chat.completions.create(
             model=MODEL,
             messages=api_messages,
