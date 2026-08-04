@@ -27,5 +27,5 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["python", "run_dev.py"]
+CMD ["python", "run_prod.py"]
 
