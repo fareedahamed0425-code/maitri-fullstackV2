@@ -13,12 +13,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     libffi-dev \
     libssl-dev \
+    libsndfile1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.render.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
+COPY requirements.render.txt ./requirements.render.txt
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.render.txt
 
 COPY . .
 
