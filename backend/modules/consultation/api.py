@@ -323,16 +323,21 @@ async def send_message(
     CommandCenter.log_ai("LLM_START", "Maitri LLM generating final empathic response")
     current_exercise_state = tracker.get_state(session.id).exercise_state
 
-    ai_response = await asyncio.to_thread(
-        chat_with_maitri,
-        messages       = history,
-        language       = req.language,
-        rag_context    = rag_context,
-        case_file      = case_file,
-        language_prompt= lang_prompt,
-        is_crisis      = crisis.is_crisis,
-        exercise_phase = current_exercise_state,
-    )
+    try:
+        ai_response = await asyncio.to_thread(
+            chat_with_maitri,
+            messages       = history,
+            language       = req.language,
+            rag_context    = rag_context,
+            case_file      = case_file,
+            language_prompt= lang_prompt,
+            is_crisis      = crisis.is_crisis,
+            exercise_phase = current_exercise_state,
+        )
+    except Exception as e:
+        print(f"[CONSULTATION] LLM call failed: {e}")
+        from providers.sarvam.sarvam_client import build_fallback_response
+        ai_response = build_fallback_response(req.message, req.language)
     
     import re
     scratchpad_match = re.search(r'<scratchpad>(.*?)</scratchpad>', ai_response, re.DOTALL | re.IGNORECASE)
