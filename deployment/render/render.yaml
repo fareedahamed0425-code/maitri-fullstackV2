@@ -1,18 +1,18 @@
 services:
-  # --------------------------------------------------
-  # Backend Web Service (FastAPI)
-  # --------------------------------------------------
   - type: web
     name: maitri-v6-backend
-    env: python
+    runtime: docker
+    plan: free
     region: oregon
-    buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: cd backend && uvicorn app:app --host 0.0.0.0 --port $PORT
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
       - key: CORS_ORIGINS
-        value: https://maitri-v6-frontend.onrender.com
+        value: https://maitri-prod.vercel.app/
       - key: DATABASE_URL
         sync: false
       - key: SARVAM_API_KEY
@@ -21,17 +21,24 @@ services:
         sync: false
       - key: FIREBASE_API_KEY
         sync: false
+      - key: RENDER
+        value: "1"
+      - key: ENVIRONMENT
+        value: production
+      - key: EMOTION_MODEL_ENABLED
+        value: "false"
 
-  # --------------------------------------------------
-  # Frontend Web Service (Next.js)
-  # --------------------------------------------------
   - type: web
     name: maitri-v6-frontend
-    env: node
+    runtime: docker
+    plan: free
     region: oregon
     rootDir: frontend
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    healthCheckPath: /
     envVars:
       - key: NEXT_PUBLIC_API_URL
         value: https://maitri-v6-backend.onrender.com
+      - key: PORT
+        value: 3000
